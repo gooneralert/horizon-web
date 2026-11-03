@@ -58,7 +58,8 @@ async function versioned() {
         .catch(() => ({}));
     const at = (path) => (files[path] ? `${path}?v=${files[path]}` : path);
     const pkg = !window.crossOriginIsolated && files["pkg-st/horizon-client_bg.wasm"] ? "pkg-st" : "pkg";
-    return { pkg, wasm: at(`${pkg}/horizon-client_bg.wasm`), boot: at("fs/boot.tar.gz") };
+    const wasmUrl = "https://github.com/gooneralert/horizon-web/releases/download/web/horizon-client_bg.wasm";
+return { pkg, wasm: wasmUrl, boot: at("fs/boot.tar.gz") };
 }
 
 async function download(url, label) {
