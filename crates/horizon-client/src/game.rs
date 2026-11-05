@@ -2489,10 +2489,6 @@ struct Game<'a> {
     /// `FramerateLimiter` and its clock.
     limiter: horizon_client::window::FramerateLimiter,
     frame_clock: horizon_client::window::SystemClock,
-    /// The page's timer pacing with VSync off, and whether the frame being
-    /// handled came from it rather than an animation frame.
-    page_pacer: horizon_client::window::PagePacer,
-    page_timer_frame: bool,
     /// Hud.scopeScale (spyglass overlay size).
     scope_scale: f32,
     /// Duration of the last frame in ticks (GUI easing).
@@ -17877,9 +17873,8 @@ impl Game<'_> {
                 WindowEvent::RedrawRequested => {
                     // The page's frame limiter: an animation frame before the
                     // limit's slot is skipped (`about_to_wait` asks the next).
-                    // Timer-paced frames already waited for their slot.
                     #[cfg(target_arch = "wasm32")]
-                    if self.options.frames.is_none() && !self.page_timer_frame {
+                    if self.options.frames.is_none() {
                         let now_ns =
                             horizon_client::window::LimiterClock::nanos(&mut self.frame_clock);
                         let limit = self.framerate_limit();
@@ -18206,34 +18201,12 @@ impl Game<'_> {
             event_loop.exit();
             return;
         }
-        // With VSync off the page's animation frames would still cap the game
-        // at the display's refresh rate. Pace the frames with the timer and
-        // the Max Framerate option instead, as native does with VSync off.
-        #[cfg(target_arch = "wasm32")]
-        let page_timer = !self.settings.vsync && !self.options.offscreen && self.window.is_some();
-        #[cfg(not(target_arch = "wasm32"))]
-        let page_timer = false;
-        let mut next_page_frame = horizon_os::time::Instant::now();
         if let Some(w) = &self.window {
             if self.options.offscreen {
                 // Offscreen frames don't wait for the window to be drawn: an
                 // occluded window (a locked macOS session) gets no redraws.
                 let id = w.id();
                 self.handle_window_event(event_loop, id, WindowEvent::RedrawRequested);
-            } else if page_timer {
-                let id = w.id();
-                let limit = self.framerate_limit();
-                let (due, next) =
-                    self.page_pacer
-                        .due(limit, horizon_os::time::Instant::now());
-                next_page_frame = next;
-                if due {
-                    // The frame already waited for its slot: the animation-frame
-                    // limiter must not skip it again.
-                    self.page_timer_frame = true;
-                    self.handle_window_event(event_loop, id, WindowEvent::RedrawRequested);
-                    self.page_timer_frame = false;
-                }
             } else {
                 w.request_redraw();
             }
@@ -18243,18 +18216,12 @@ impl Game<'_> {
             return;
         }
         #[cfg(not(target_arch = "wasm32"))]
-        let _ = next_page_frame;
-        #[cfg(not(target_arch = "wasm32"))]
         event_loop.set_control_flow(ControlFlow::Poll);
         // Polling the browser's loop spins the page's thread (some 100,000
         // turns a second, a whole core) between animation frames: the redraw
         // asked above is the next turn, and its frame calls this again.
         #[cfg(target_arch = "wasm32")]
-        event_loop.set_control_flow(if page_timer {
-            ControlFlow::WaitUntil(next_page_frame)
-        } else {
-            web_wait(self.window.is_some() && !self.options.offscreen)
-        });
+        event_loop.set_control_flow(web_wait(self.window.is_some() && !self.options.offscreen));
     }
 }
 /// How long the page's loop sleeps after `about_to_wait`. With a redraw
@@ -18523,8 +18490,6 @@ impl<'a> Game<'a> {
             view: Default::default(),
             limiter: horizon_client::window::FramerateLimiter::new(0),
             frame_clock: Default::default(),
-            page_pacer: Default::default(),
-            page_timer_frame: false,
             scope_scale: 0.5,
             frame_ticks: 0.0,
             title: None,

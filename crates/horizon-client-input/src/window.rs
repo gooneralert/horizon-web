@@ -298,47 +298,6 @@ impl FramerateLimiter {
     }
 }
 
-/// The page's frame pacing with the VSync option off: animation frames no
-/// longer pace the game, since the display's refresh rate would cap it, so
-/// the page's timer asks for the next frame at the Max Framerate option
-/// instead. `next` is the next frame's deadline. A deadline that was missed
-/// by more than a slot restarts from now, so a stall doesn't make frames
-/// bunch up to catch up.
-#[derive(Clone, Debug, Default)]
-pub struct PagePacer {
-    next: Option<horizon_os::time::Instant>,
-}
-
-impl PagePacer {
-    pub fn new() -> Self {
-        Self::default()
-    }
-    /// Whether a frame is due at `now`, and the next frame's deadline.
-    pub fn due(
-        &mut self,
-        framerate_limit: i32,
-        now: horizon_os::time::Instant,
-    ) -> (bool, horizon_os::time::Instant) {
-        let slot = if framerate_limit >= 260 {
-            horizon_os::time::Duration::ZERO
-        } else {
-            horizon_os::time::Duration::from_nanos(
-                1_000_000_000 / u64::from(framerate_limit.max(1) as u32),
-            )
-        };
-        let at = self.next.unwrap_or(now);
-        if now < at {
-            return (false, at);
-        }
-        let mut next = at + slot;
-        if next < now {
-            next = now + slot;
-        }
-        self.next = Some(next);
-        (true, next)
-    }
-}
-
 /// blaze3d `Window`'s `fullscreenRequested` / `fullscreen` pair. The window
 /// system has the last word: a change it makes on its own (a compositor
 /// shortcut, a window rule) is adopted by the Fullscreen option
@@ -772,38 +731,6 @@ mod tests {
         assert!(limiter.frame_due(60, 0));
         assert!(limiter.frame_due(60, 100_000_000));
         assert!(!limiter.frame_due(60, 105_000_000));
-    }
-    #[test]
-    fn page_pacer_paces_timer_frames_at_the_limit() {
-        use horizon_os::time::{Duration, Instant};
-        let start = Instant::now();
-        // One look a millisecond for a second at 60: sixty frames, not sixty
-        // animation frames of a display that may run at another rate.
-        let mut pacer = PagePacer::new();
-        let draws = (0..1000)
-            .filter(|ms| {
-                let now = start + Duration::from_millis(*ms);
-                pacer.due(60, now).0
-            })
-            .count();
-        assert!((59..=60).contains(&draws), "{draws}");
-        // Unlimited draws on every turn, however fast the timer runs.
-        let mut pacer = PagePacer::new();
-        let draws = (0..250)
-            .filter(|turn| {
-                let now = start + Duration::from_millis(turn * 4);
-                pacer.due(260, now).0
-            })
-            .count();
-        assert_eq!(draws, 250);
-        // A frame later than its slot restarts the pace instead of bursting.
-        let mut pacer = PagePacer::new();
-        let (due, next) = pacer.due(60, start);
-        assert!(due);
-        assert_eq!(next, start + Duration::from_nanos(16_666_666));
-        let (due, next) = pacer.due(60, start + Duration::from_secs(1));
-        assert!(due);
-        assert_eq!(next, start + Duration::from_secs(1) + Duration::from_nanos(16_666_666));
     }
     #[test]
     fn vsync_only_uses_fifo() {
