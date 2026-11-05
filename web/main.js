@@ -58,8 +58,9 @@ async function versioned() {
         .catch(() => ({}));
     const at = (path) => (files[path] ? `${path}?v=${files[path]}` : path);
     const pkg = !window.crossOriginIsolated && files["pkg-st/horizon-client_bg.wasm"] ? "pkg-st" : "pkg";
-    const wasmUrl = "https://raw.githubusercontent.com/gooneralert/horizon-web/main/web/dist/pkg/horizon-client_bg.wasm";
-return { pkg, wasm: wasmUrl, boot: at("fs/boot.tar.gz") };
+    const wasmUrl = "https://raw.githubusercontent.com/gooneralert/horizon-web/main/web/dist/pkg/horizon-client_bg.wasm" +
+        (files["pkg/horizon-client_bg.wasm"] ? `?v=${files["pkg/horizon-client_bg.wasm"]}` : "");
+    return { pkg, wasm: wasmUrl, boot: at("fs/boot.tar.gz") };
 }
 
 async function download(url, label) {

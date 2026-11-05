@@ -138,13 +138,13 @@ world `Test` in creative mode at start.
   while the first renderer opens asynchronously (`Loading::resumed`, because
   the page can't wait for the GPU) and the loading screen draws: it shows
   0.4 s after start instead of after the 1.5 s load.
-- **Frame pacing**: the page never polls winit's loop (`ControlFlow::Poll`
-  turned it some 100,000 times a second between animation frames, a whole
-  core): after each frame it asks for the next and waits for it
-  (`web_wait`). The frame limiter can't wait on the page either, so instead
-  of `limit_display_fps` the redraw skips the animation frames that come
-  before the limit's slot (`FramerateLimiter::frame_due`). In a world at
-  60 fps the page's thread is busy about 60–100 ms a second.
+- **Frame pacing**: with VSync on, redraws follow the browser's animation
+  frames. With VSync off, a timer paces redraws to the Max Framerate setting;
+  the unlimited setting yields for at least 1 ms rather than spinning the
+  page's thread. WebGPU may still present only at the display refresh rate, so
+  the FPS counter measures rendered frames, not frames shown on screen. The
+  frame limiter can't wait on the page, so capped redraws use `PagePacer`
+  instead of `limit_display_fps`.
 - **Threads** (`horizon-os/src/workers.rs`, `web/worker.js`): the module is
   built with atomics on a shared memory (std rebuilt on nightly, the linker's
   `--shared-memory`). Each spawned thread is a module worker that instantiates

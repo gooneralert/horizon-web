@@ -298,6 +298,39 @@ impl FramerateLimiter {
     }
 }
 
+/// Timer-based redraw pacing for the page when VSync is off. Browser redraw
+/// events use `requestAnimationFrame`, so they cannot exceed display refresh.
+#[derive(Clone, Debug, Default)]
+pub struct PagePacer {
+    next: Option<horizon_os::time::Instant>,
+}
+
+impl PagePacer {
+    pub fn due(
+        &mut self,
+        framerate_limit: i32,
+        now: horizon_os::time::Instant,
+    ) -> (bool, horizon_os::time::Instant) {
+        let slot = if framerate_limit >= 260 {
+            horizon_os::time::Duration::from_millis(1)
+        } else {
+            horizon_os::time::Duration::from_nanos(
+                1_000_000_000 / u64::from(framerate_limit.max(1) as u32),
+            )
+        };
+        let at = self.next.unwrap_or(now);
+        if now < at {
+            return (false, at);
+        }
+        let mut next = at + slot;
+        if next < now {
+            next = now + slot;
+        }
+        self.next = Some(next);
+        (true, next)
+    }
+}
+
 /// blaze3d `Window`'s `fullscreenRequested` / `fullscreen` pair. The window
 /// system has the last word: a change it makes on its own (a compositor
 /// shortcut, a window rule) is adopted by the Fullscreen option
@@ -731,6 +764,22 @@ mod tests {
         assert!(limiter.frame_due(60, 0));
         assert!(limiter.frame_due(60, 100_000_000));
         assert!(!limiter.frame_due(60, 105_000_000));
+    }
+    #[test]
+    fn page_pacer_keeps_unlimited_redraws_above_display_refresh_without_spinning() {
+        use horizon_os::time::{Duration, Instant};
+        let start = Instant::now();
+        let mut pacer = PagePacer::default();
+        let mut draws = 0;
+        for ms in 0..1000 {
+            let now = start + Duration::from_millis(ms);
+            let (due, next) = pacer.due(260, now);
+            draws += u32::from(due);
+            if due {
+                assert!(next > now);
+            }
+        }
+        assert_eq!(draws, 1000);
     }
     #[test]
     fn vsync_only_uses_fifo() {
