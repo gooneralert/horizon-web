@@ -138,13 +138,11 @@ world `Test` in creative mode at start.
   while the first renderer opens asynchronously (`Loading::resumed`, because
   the page can't wait for the GPU) and the loading screen draws: it shows
   0.4 s after start instead of after the 1.5 s load.
-- **Frame pacing**: with VSync on, redraws follow the browser's animation
-  frames. With VSync off, a timer paces redraws to the Max Framerate setting;
-  the unlimited setting yields for at least 1 ms rather than spinning the
-  page's thread. WebGPU may still present only at the display refresh rate, so
-  the FPS counter measures rendered frames, not frames shown on screen. The
-  frame limiter can't wait on the page, so capped redraws use `PagePacer`
-  instead of `limit_display_fps`.
+- **Frame pacing**: the browser's animation frames pace rendering, whether
+  VSync is on or off. The Max Framerate setting may skip animation frames, but
+  unlimited rendering still cannot exceed the browser's animation-frame rate.
+  Rendering on a faster timer would do extra work on the page thread without
+  increasing the browser's presentation rate, and can make the game lag.
 - **Threads** (`horizon-os/src/workers.rs`, `web/worker.js`): the module is
   built with atomics on a shared memory (std rebuilt on nightly, the linker's
   `--shared-memory`). Each spawned thread is a module worker that instantiates

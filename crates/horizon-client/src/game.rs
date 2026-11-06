@@ -2489,10 +2489,6 @@ struct Game<'a> {
     /// `FramerateLimiter` and its clock.
     limiter: horizon_client::window::FramerateLimiter,
     frame_clock: horizon_client::window::SystemClock,
-    #[cfg(target_arch = "wasm32")]
-    page_pacer: horizon_client::window::PagePacer,
-    #[cfg(target_arch = "wasm32")]
-    page_timer_frame: bool,
     /// Hud.scopeScale (spyglass overlay size).
     scope_scale: f32,
     /// Duration of the last frame in ticks (GUI easing).
@@ -17878,7 +17874,7 @@ impl Game<'_> {
                     // The page's frame limiter: an animation frame before the
                     // limit's slot is skipped (`about_to_wait` asks the next).
                     #[cfg(target_arch = "wasm32")]
-                    if self.options.frames.is_none() && !self.page_timer_frame {
+                    if self.options.frames.is_none() {
                         let now_ns =
                             horizon_client::window::LimiterClock::nanos(&mut self.frame_clock);
                         let limit = self.framerate_limit();
@@ -18205,13 +18201,6 @@ impl Game<'_> {
             event_loop.exit();
             return;
         }
-        // requestAnimationFrame caps redraws at the display refresh rate. With
-        // VSync off, pace the game from a timer; unlimited uses a cooperative
-        // 1 ms wait instead of spinning the page's event loop.
-        #[cfg(target_arch = "wasm32")]
-        let page_timer = !self.settings.vsync && !self.options.offscreen && self.window.is_some();
-        #[cfg(target_arch = "wasm32")]
-        let mut next_page_frame = horizon_os::time::Instant::now();
         if let Some(w) = &self.window {
             if self.options.offscreen {
                 // Offscreen frames don't wait for the window to be drawn: an
@@ -18219,21 +18208,6 @@ impl Game<'_> {
                 let id = w.id();
                 self.handle_window_event(event_loop, id, WindowEvent::RedrawRequested);
             } else {
-                #[cfg(target_arch = "wasm32")]
-                if page_timer {
-                    let id = w.id();
-                    let limit = self.framerate_limit();
-                    let (due, next) = self.page_pacer.due(limit, horizon_os::time::Instant::now());
-                    next_page_frame = next;
-                    if due {
-                        self.page_timer_frame = true;
-                        self.handle_window_event(event_loop, id, WindowEvent::RedrawRequested);
-                        self.page_timer_frame = false;
-                    }
-                } else {
-                    w.request_redraw();
-                }
-                #[cfg(not(target_arch = "wasm32"))]
                 w.request_redraw();
             }
         } else if self.options.headless {
@@ -18247,11 +18221,7 @@ impl Game<'_> {
         // turns a second, a whole core) between animation frames: the redraw
         // asked above is the next turn, and its frame calls this again.
         #[cfg(target_arch = "wasm32")]
-        event_loop.set_control_flow(if page_timer {
-            ControlFlow::WaitUntil(next_page_frame)
-        } else {
-            web_wait(self.window.is_some() && !self.options.offscreen)
-        });
+        event_loop.set_control_flow(web_wait(self.window.is_some() && !self.options.offscreen));
     }
 }
 /// How long the page's loop sleeps after `about_to_wait`. With a redraw
@@ -18520,10 +18490,6 @@ impl<'a> Game<'a> {
             view: Default::default(),
             limiter: horizon_client::window::FramerateLimiter::new(0),
             frame_clock: Default::default(),
-            #[cfg(target_arch = "wasm32")]
-            page_pacer: Default::default(),
-            #[cfg(target_arch = "wasm32")]
-            page_timer_frame: false,
             scope_scale: 0.5,
             frame_ticks: 0.0,
             title: None,
